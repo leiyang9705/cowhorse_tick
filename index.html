@@ -4,9 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>牛马打卡</title>
-  <!-- 引入 Vant UI 样式 -->
-  <link rel="stylesheet" href="https://fastly.jsdelivr.net/npm/vant@4/lib/index.css">
-  <!-- 引入自定义样式 -->
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -20,8 +17,22 @@
     <!-- 首页：打卡 -->
     <div v-if="currentTab === 'home'" class="container">
       <div class="card">
-        <div class="card-item"><span>标准下班</span><strong>{{ settings.workEndTime }}</strong></div>
-        <div class="card-item highlight"><span>今日加班</span><strong>{{ todayOvertime }} 小时</strong></div>
+        <div class="card-item">
+          <span>标准下班</span>
+          <strong>{{ settings.workEndTime }}</strong>
+        </div>
+        <div class="card-item">
+          <span>加班缓冲</span>
+          <strong>{{ settings.bufferMinutes }} 分钟</strong>
+        </div>
+        <div class="card-item highlight">
+          <span>今日加班</span>
+          <strong>{{ todayOvertime }} 小时</strong>
+        </div>
+        <div class="card-item" v-if="isLate">
+          <span class="late-tag">今日迟到</span>
+          <strong>请留意考勤</strong>
+        </div>
       </div>
 
       <div class="clock-area">
@@ -33,15 +44,52 @@
         </button>
       </div>
 
-      <div class="list-title">最近记录</div>
-      <div class="list-item" v-for="rec in records.slice(0, 5)" :key="rec.id">
+      <div class="list-title">最近记录 (点击右侧图标修改)</div>
+      <div class="list-item" v-for="rec in records.slice(0, 10)" :key="rec.id">
+        <div class="list-left">
+          <div class="date">{{ rec.date }} <span v-if="checkLate(rec.clockIn)" class="late-dot">迟</span></div>
+          <div class="time">{{ rec.clockIn || '-' }} ~ {{ rec.clockOut || '-' }}</div>
+        </div>
+        <div class="list-right">
+          <span class="overtime-text">+{{ rec.overtimeHours }}h</span>
+          <span class="edit-icon" @click="openEditModal(rec)">✏️</span>
+        </div>
+      </div>
+      <div v-if="records.length === 0" class="empty">暂无记录，快去打卡吧！</div>
+    </div>
+
+    <!-- 统计页 -->
+    <div v-if="currentTab === 'stats'" class="container">
+      <div class="header" style="border-radius: 8px; margin-bottom: 15px;">
+        <h2>加班统计</h2>
+      </div>
+      
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-value">{{ weeklyOvertime.toFixed(1) }}</div>
+          <div class="stat-label">本周 (h)</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">{{ monthlyOvertime.toFixed(1) }}</div>
+          <div class="stat-label">本月 (h)</div>
+        </div>
+        <div class="stat-card highlight">
+          <div class="stat-value">{{ quarterlyOvertime.toFixed(1) }}</div>
+          <div class="stat-label">近三月 (h)</div>
+        </div>
+      </div>
+
+      <div class="list-title" style="margin-top: 20px;">本月详细记录</div>
+      <div class="list-item" v-for="rec in monthlyRecords" :key="rec.id">
         <div class="list-left">
           <div class="date">{{ rec.date }}</div>
           <div class="time">{{ rec.clockIn || '-' }} ~ {{ rec.clockOut || '-' }}</div>
         </div>
-        <div class="list-right">+{{ rec.overtimeHours }}h</div>
+        <div class="list-right">
+          <span class="overtime-text">+{{ rec.overtimeHours }}h</span>
+        </div>
       </div>
-      <div v-if="records.length === 0" class="empty">暂无记录，快去打卡吧！</div>
+      <div v-if="monthlyRecords.length === 0" class="empty">本月暂无加班记录</div>
     </div>
 
     <!-- 设置页 -->
@@ -62,30 +110,59 @@
       </div>
 
       <div class="card" style="margin-top: 20px;">
+        <h3 class="card-title">考勤规则设置</h3>
         <div class="form-item">
           <label>标准上班时间</label>
           <input type="time" v-model="settings.workStartTime" @change="saveSettings">
         </div>
         <div class="form-item">
+          <label>上班弹性时间 (分钟)</label>
+          <input type="number" v-model.number="settings.flexibleMinutes" @change="saveSettings" placeholder="0">
+          <small>规定时间后多久不算迟到</small>
+        </div>
+        <div class="form-item">
           <label>标准下班时间</label>
           <input type="time" v-model="settings.workEndTime" @change="saveSettings">
+        </div>
+        <div class="form-item">
+          <label>加班缓冲时间 (分钟)</label>
+          <input type="number" v-model.number="settings.bufferMinutes" @change="saveSettings" placeholder="0">
+          <small>规定时间后多久才开始算加班</small>
         </div>
       </div>
       
       <div class="tips">💡 提示：生成 Token 时请仅勾选 gist 权限。数据将安全存储在您的 GitHub Gist 中。</div>
     </div>
 
+    <!-- 修改时间弹窗 -->
+    <div class="modal-overlay" v-if="showEditModal" @click="closeEditModal">
+      <div class="modal-content" @click.stop>
+        <h3>修改打卡时间</h3>
+        <p class="modal-date">{{ editingRecord.date }}</p>
+        <div class="form-item">
+          <label>上班时间</label>
+          <input type="time" v-model="editClockIn">
+        </div>
+        <div class="form-item">
+          <label>下班时间</label>
+          <input type="time" v-model="editClockOut">
+        </div>
+        <div class="modal-btns">
+          <button class="btn btn-text" @click="closeEditModal">取消</button>
+          <button class="btn btn-primary" @click="saveEdit" style="width: auto; padding: 10px 20px;">保存</button>
+        </div>
+      </div>
+    </div>
+
     <!-- 底部导航 -->
     <div class="tabbar">
       <div class="tab-item" :class="{active: currentTab === 'home'}" @click="currentTab = 'home'">打卡</div>
+      <div class="tab-item" :class="{active: currentTab === 'stats'}" @click="currentTab = 'stats'">统计</div>
       <div class="tab-item" :class="{active: currentTab === 'settings'}" @click="currentTab = 'settings'">设置</div>
     </div>
   </div>
 
-  <!-- 引入 Vue 3 和 Vant JS -->
   <script src="https://fastly.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
-  <script src="https://fastly.jsdelivr.net/npm/vant@4/lib/vant.min.js"></script>
-  <!-- 引入业务逻辑 -->
   <script src="app.js"></script>
 </body>
 </html>
