@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>牛马打卡</title>
+  <!-- 引入 Vant UI 样式 -->
+  <link rel="stylesheet" href="https://fastly.jsdelivr.net/npm/vant@4/lib/index.css">
+  <!-- 引入自定义样式 -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- 顶部状态 -->
+    <div class="header" v-if="currentTab === 'home'">
+      <h2>牛马打卡</h2>
+      <p>{{ todayStr }} | 状态: <span :class="{'synced': !loading, 'loading': loading}">{{ loading ? '同步中...' : '已就绪' }}</span></p>
+    </div>
+
+    <!-- 首页：打卡 -->
+    <div v-if="currentTab === 'home'" class="container">
+      <div class="card">
+        <div class="card-item"><span>标准下班</span><strong>{{ settings.workEndTime }}</strong></div>
+        <div class="card-item highlight"><span>今日加班</span><strong>{{ todayOvertime }} 小时</strong></div>
+      </div>
+
+      <div class="clock-area">
+        <button class="btn btn-primary" @click="handleClock('in')" :disabled="!!todayRecord?.clockIn || loading">
+          {{ todayRecord?.clockIn ? `已上班 (${todayRecord.clockIn})` : '上班打卡' }}
+        </button>
+        <button class="btn btn-danger" @click="handleClock('out')" :disabled="loading">
+          {{ todayRecord?.clockOut ? `已下班 (${todayRecord.clockOut})` : '下班打卡' }}
+        </button>
+      </div>
+
+      <div class="list-title">最近记录</div>
+      <div class="list-item" v-for="rec in records.slice(0, 5)" :key="rec.id">
+        <div class="list-left">
+          <div class="date">{{ rec.date }}</div>
+          <div class="time">{{ rec.clockIn || '-' }} ~ {{ rec.clockOut || '-' }}</div>
+        </div>
+        <div class="list-right">+{{ rec.overtimeHours }}h</div>
+      </div>
+      <div v-if="records.length === 0" class="empty">暂无记录，快去打卡吧！</div>
+    </div>
+
+    <!-- 设置页 -->
+    <div v-if="currentTab === 'settings'" class="container">
+      <div class="card">
+        <div class="form-item">
+          <label>GitHub Token</label>
+          <input type="password" v-model="tokenInput" placeholder="输入仅含 gist 权限的 Token">
+        </div>
+        <div class="form-item">
+          <label>Gist ID</label>
+          <input type="text" :value="gistId || '未绑定'" disabled>
+        </div>
+        <button class="btn btn-primary" @click="bindGist" :disabled="loading">
+          {{ gistId ? '验证并同步' : '首次绑定并创建' }}
+        </button>
+        <button class="btn btn-text" @click="clearAuth">清除本地授权</button>
+      </div>
+
+      <div class="card" style="margin-top: 20px;">
+        <div class="form-item">
+          <label>标准上班时间</label>
+          <input type="time" v-model="settings.workStartTime" @change="saveSettings">
+        </div>
+        <div class="form-item">
+          <label>标准下班时间</label>
+          <input type="time" v-model="settings.workEndTime" @change="saveSettings">
+        </div>
+      </div>
+      
+      <div class="tips">💡 提示：生成 Token 时请仅勾选 gist 权限。数据将安全存储在您的 GitHub Gist 中。</div>
+    </div>
+
+    <!-- 底部导航 -->
+    <div class="tabbar">
+      <div class="tab-item" :class="{active: currentTab === 'home'}" @click="currentTab = 'home'">打卡</div>
+      <div class="tab-item" :class="{active: currentTab === 'settings'}" @click="currentTab = 'settings'">设置</div>
+    </div>
+  </div>
+
+  <!-- 引入 Vue 3 和 Vant JS -->
+  <script src="https://fastly.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://fastly.jsdelivr.net/npm/vant@4/lib/vant.min.js"></script>
+  <!-- 引入业务逻辑 -->
+  <script src="app.js"></script>
+</body>
+</html>
