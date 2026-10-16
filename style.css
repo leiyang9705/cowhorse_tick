@@ -3,7 +3,7 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   background-color: #f7f8fa;
   color: #323233;
-  padding-bottom: 60px; /* 给底部 tabbar 留空间 */
+  padding-bottom: 60px;
 }
 .header {
   background: linear-gradient(135deg, #1989fa, #07c160);
@@ -24,6 +24,7 @@ body {
   box-shadow: 0 2px 8px rgba(0,0,0,0.05);
   margin-bottom: 15px;
 }
+.card-title { margin: 0 0 15px 0; font-size: 16px; }
 .card-item {
   display: flex;
   justify-content: space-between;
@@ -33,6 +34,7 @@ body {
 }
 .card-item:last-child { border-bottom: none; }
 .card-item.highlight strong { color: #ee0a24; font-size: 1.2em; }
+.late-tag { color: #ff976a; font-weight: bold; }
 
 .clock-area { display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px; }
 .btn {
@@ -63,11 +65,33 @@ body {
 }
 .list-item:first-of-type { border-radius: 8px 8px 0 0; }
 .list-item:last-of-type { border-radius: 0 0 8px 8px; border-bottom: none; }
-.date { font-weight: bold; }
+.date { font-weight: bold; display: flex; align-items: center; gap: 5px;}
+.late-dot { font-size: 10px; color: white; background: #ff976a; padding: 1px 4px; border-radius: 4px; }
 .time { font-size: 12px; color: #999; margin-top: 4px; }
-.list-right { color: #ee0a24; font-weight: bold; }
+.list-right { display: flex; align-items: center; gap: 10px; }
+.overtime-text { color: #ee0a24; font-weight: bold; }
+.edit-icon { cursor: pointer; font-size: 16px; }
 .empty { text-align: center; color: #999; padding: 30px 0; }
 
+/* 统计页样式 */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.stat-card {
+  background: white;
+  padding: 15px 10px;
+  border-radius: 8px;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+.stat-card.highlight { background: linear-gradient(135deg, #ff6034, #ee0a24); color: white; }
+.stat-value { font-size: 24px; font-weight: bold; margin-bottom: 5px; }
+.stat-label { font-size: 12px; opacity: 0.8; }
+
+/* 设置页样式 */
 .form-item { margin-bottom: 15px; }
 .form-item label { display: block; font-size: 14px; color: #666; margin-bottom: 5px; }
 .form-item input {
@@ -78,8 +102,31 @@ body {
   font-size: 14px;
   box-sizing: border-box;
 }
+.form-item small { display: block; font-size: 12px; color: #999; margin-top: 4px; }
 .tips { font-size: 12px; color: #999; line-height: 1.5; padding: 10px; }
 
+/* 弹窗样式 */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.modal-content {
+  background: white;
+  width: 85%;
+  max-width: 350px;
+  border-radius: 12px;
+  padding: 20px;
+}
+.modal-content h3 { margin: 0 0 5px 0; }
+.modal-date { color: #999; font-size: 14px; margin: 0 0 15px 0; }
+.modal-btns { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+
+/* 底部导航 */
 .tabbar {
   position: fixed;
   bottom: 0;
