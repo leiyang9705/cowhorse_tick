@@ -7,8 +7,19 @@ const app = createApp({
     const tokenInput = ref(localStorage.getItem('gh_token') || '');
     const gistId = ref(localStorage.getItem('gh_gist_id') || '');
     const records = ref([]);
-    const settings = ref({ workStartTime: '09:00', workEndTime: '18:00' });
+    const settings = ref({ 
+      workStartTime: '09:00', 
+      workEndTime: '18:00',
+      flexibleMinutes: 0,
+      bufferMinutes: 0
+    });
     const loading = ref(false);
+
+    // 修改弹窗状态
+    const showEditModal = ref(false);
+    const editingRecord = ref(null);
+    const editClockIn = ref('');
+    const editClockOut = ref('');
 
     // --- 计算属性 ---
     const todayStr = computed(() => {
@@ -18,13 +29,73 @@ const app = createApp({
 
     const todayRecord = computed(() => records.value.find(r => r.date === todayStr.value));
 
+    // 核心：加班计算逻辑 (包含缓冲时间)
+    const calcOvertime = (clockIn, clockOut) => {
+      if (!clockIn || !clockOut) return 0;
+      const [stdH, stdM] = settings.value.workEndTime.split(':').map(Number);
+      const buffer = settings.value.bufferMinutes || 0;
+      
+      // 开始计算加班的基准时间 (分钟)
+      const baseOvertimeStartMin = stdH * 60 + stdM + buffer;
+      
+      const [outH, outM] = clockOut.split(':').map(Number);
+      const clockOutMin = outH * 60 + outM;
+      
+      if (clockOutMin <= baseOvertimeStartMin) return 0;
+      
+      const overtimeMin = clockOutMin - baseOvertimeStartMin;
+      return Math.round((overtimeMin / 60) * 10) / 10;
+    };
+
+    // 核心：迟到判断逻辑 (包含弹性时间)
+    const checkLate = (clockIn) => {
+      if (!clockIn) return false;
+      const [stdH, stdM] = settings.value.workStartTime.split(':').map(Number);
+      const flexible = settings.value.flexibleMinutes || 0;
+      
+      const latestStartMin = stdH * 60 + stdM + flexible;
+      const [inH, inM] = clockIn.split(':').map(Number);
+      const clockInMin = inH * 60 + inM;
+      
+      return clockInMin > latestStartMin;
+    };
+
     const todayOvertime = computed(() => {
-      if (!todayRecord.value?.clockIn || !todayRecord.value?.clockOut) return 0;
-      const [inH, inM] = todayRecord.value.clockIn.split(':').map(Number);
-      const [outH, outM] = todayRecord.value.clockOut.split(':').map(Number);
-      const totalMin = (outH * 60 + outM) - (inH * 60 + inM);
-      const overMin = totalMin - (8 * 60); // 假设标准8小时
-      return Math.max(0, Math.round((overMin / 60) * 10) / 10);
+      if (!todayRecord.value) return 0;
+      return calcOvertime(todayRecord.value.clockIn, todayRecord.value.clockOut);
+    });
+
+    const isLate = computed(() => checkLate(todayRecord.value?.clockIn));
+
+    // --- 统计计算属性 ---
+    const getWeekStart = (date) => {
+      const d = new Date(date);
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+      d.setDate(diff);
+      return d.toISOString().slice(0, 10);
+    };
+
+    const weeklyOvertime = computed(() => {
+      const weekStart = getWeekStart(new Date());
+      return records.value.filter(r => r.date >= weekStart).reduce((sum, r) => sum + r.overtimeHours, 0);
+    });
+
+    const monthlyOvertime = computed(() => {
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      return records.value.filter(r => r.date.startsWith(currentMonth)).reduce((sum, r) => sum + r.overtimeHours, 0);
+    });
+
+    const quarterlyOvertime = computed(() => {
+      const now = new Date();
+      const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+      const startDate = threeMonthsAgo.toISOString().slice(0, 10);
+      return records.value.filter(r => r.date >= startDate).reduce((sum, r) => sum + r.overtimeHours, 0);
+    });
+
+    const monthlyRecords = computed(() => {
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      return records.value.filter(r => r.date.startsWith(currentMonth));
     });
 
     // --- API 封装 ---
@@ -43,7 +114,7 @@ const app = createApp({
         const data = await res.json();
         const content = JSON.parse(data.files['cowhorse_data.json'].content);
         records.value = content.records || [];
-        settings.value = content.settings || settings.value;
+        settings.value = { ...settings.value, ...content.settings };
       } catch (e) {
         alert(e.message);
       } finally {
@@ -55,7 +126,7 @@ const app = createApp({
       const payload = {
         files: {
           'cowhorse_data.json': {
-            content: JSON.stringify({ version: '1.0', settings: settings.value, records: records.value }, null, 2)
+            content: JSON.stringify({ version: '1.1', settings: settings.value, records: records.value }, null, 2)
           }
         }
       };
@@ -71,7 +142,7 @@ const app = createApp({
         public: false,
         files: {
           'cowhorse_data.json': {
-            content: JSON.stringify({ version: '1.0', settings: settings.value, records: [] }, null, 2)
+            content: JSON.stringify({ version: '1.1', settings: settings.value, records: [] }, null, 2)
           }
         }
       };
@@ -100,11 +171,43 @@ const app = createApp({
         if (type === 'in') rec.clockIn = timeStr;
         else {
           rec.clockOut = timeStr;
-          rec.overtimeHours = todayOvertime.value;
+          rec.overtimeHours = calcOvertime(rec.clockIn, rec.clockOut);
         }
 
         await pushData();
         alert(type === 'in' ? '上班打卡成功！' : '下班打卡成功！');
+      } catch (e) {
+        alert(e.message);
+      } finally {
+        loading.value = false;
+      }
+    };
+
+    // 修改记录逻辑
+    const openEditModal = (rec) => {
+      editingRecord.value = rec;
+      editClockIn.value = rec.clockIn || '';
+      editClockOut.value = rec.clockOut || '';
+      showEditModal.value = true;
+    };
+
+    const closeEditModal = () => {
+      showEditModal.value = false;
+      editingRecord.value = null;
+    };
+
+    const saveEdit = async () => {
+      if (!editingRecord.value) return;
+      loading.value = true;
+      try {
+        editingRecord.value.clockIn = editClockIn.value || null;
+        editingRecord.value.clockOut = editClockOut.value || null;
+        // 重新计算加班时长
+        editingRecord.value.overtimeHours = calcOvertime(editingRecord.value.clockIn, editingRecord.value.clockOut);
+        
+        await pushData();
+        alert('修改成功！');
+        closeEditModal();
       } catch (e) {
         alert(e.message);
       } finally {
@@ -135,6 +238,10 @@ const app = createApp({
       if (!gistId.value) return;
       loading.value = true;
       try {
+        // 设置改变后，重新计算所有记录的加班时长
+        records.value.forEach(rec => {
+          rec.overtimeHours = calcOvertime(rec.clockIn, rec.clockOut);
+        });
         await pushData();
       } catch (e) {
         alert(e.message);
@@ -152,15 +259,18 @@ const app = createApp({
       alert('已清除');
     };
 
-    // --- 初始化 ---
     onMounted(() => {
       if (gistId.value) fetchData();
     });
 
     return {
       currentTab, tokenInput, gistId, records, settings, loading,
-      todayStr, todayRecord, todayOvertime,
-      handleClock, bindGist, saveSettings, clearAuth
+      todayStr, todayRecord, todayOvertime, isLate,
+      weeklyOvertime, monthlyOvertime, quarterlyOvertime, monthlyRecords,
+      handleClock, bindGist, saveSettings, clearAuth,
+      checkLate,
+      showEditModal, editingRecord, editClockIn, editClockOut,
+      openEditModal, closeEditModal, saveEdit
     };
   }
 });
